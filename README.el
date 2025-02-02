@@ -1,46 +1,10 @@
-;; https://github.com/progfolio/elpaca
-(defvar elpaca-installer-version 0.8)
-(defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
-(defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
-(defvar elpaca-repos-directory (expand-file-name "repos/" elpaca-directory))
-(defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
-                              :ref nil :depth 1
-                              :files (:defaults "elpaca-test.el" (:exclude "extensions"))
-                              :build (:not elpaca--activate-package)))
-(let* ((repo  (expand-file-name "elpaca/" elpaca-repos-directory))
-       (build (expand-file-name "elpaca/" elpaca-builds-directory))
-       (order (cdr elpaca-order))
-       (default-directory repo))
-  (add-to-list 'load-path (if (file-exists-p build) build repo))
-  (unless (file-exists-p repo)
-    (make-directory repo t)
-    (when (< emacs-major-version 28) (require 'subr-x))
-    (condition-case-unless-debug err
-        (if-let* ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
-                  ((zerop (apply #'call-process `("git" nil ,buffer t "clone"
-                                                  ,@(when-let* ((depth (plist-get order :depth)))
-                                                      (list (format "--depth=%d" depth) "--no-single-branch"))
-                                                  ,(plist-get order :repo) ,repo))))
-                  ((zerop (call-process "git" nil buffer t "checkout"
-                                        (or (plist-get order :ref) "--"))))
-                  (emacs (concat invocation-directory invocation-name))
-                  ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
-                                        "--eval" "(byte-recompile-directory \".\" 0 'force)")))
-                  ((require 'elpaca))
-                  ((elpaca-generate-autoloads "elpaca" repo)))
-            (progn (message "%s" (buffer-string)) (kill-buffer buffer))
-          (error "%s" (with-current-buffer buffer (buffer-string))))
-      ((error) (warn "%s" err) (delete-directory repo 'recursive))))
-  (unless (require 'elpaca-autoloads nil t)
-    (require 'elpaca)
-    (elpaca-generate-autoloads "elpaca" repo)
-    (load "./elpaca-autoloads")))
-
-(add-hook 'after-init-hook #'elpaca-process-queues)
-(elpaca `(,@elpaca-order))
-
-(elpaca elpaca-use-package
-  (elpaca-use-package-mode))
+(require 'use-package-ensure) ;; Load use-package-always-ensure
+(setq use-package-always-ensure t) ;; Always ensures that a package is installed
+(setq package-archives '(("melpa" . "https://melpa.org/packages/") ;; Sets default package repositories
+                         ("org" . "https://orgmode.org/elpa/")
+                         ("elpa" . "https://elpa.gnu.org/packages/")
+                         ("nongnu" . "https://elpa.nongnu.org/nongnu/"))) ;; For Eat Terminal
+(package-initialize)
 
 (defun dysthesis/nixos-p ()
   "Return t if operating system is NixOS, nil otherwise."
@@ -53,6 +17,178 @@
 
 ;; Run this before the elpaca.el is loaded. Before the installer in your init.el is a good spot.
 (when (dysthesis/nixos-p) (setq elpaca-core-date (list (dysthesis/nixos/get-emacs-build-date))))
+
+(use-package general
+  :ensure t
+  :after (evil)
+  :demand t
+  :config
+  (general-evil-setup)
+  ;; Set up 'SPC' as the leader key
+  (general-create-definer start/leader-keys
+    :states '(normal insert visual motion emacs)
+    :keymaps 'override
+    :prefix "SPC"           ;; Set leader key
+    :global-prefix "C-SPC") ;; Set global leader key
+
+  (start/leader-keys
+    "." '(find-file :wk "Find file")
+    "TAB" '(comment-line :wk "Comment lines")
+    "p" '(:keymap projectile-command-map
+                  :package projectile
+                  :wk "Projectile command map"))
+
+  (start/leader-keys
+    "f" '(:ignore t :wk "Find")
+    "f c" '((lambda () (interactive) (find-file "~/.config/emacs/README.org")) :wk "Edit emacs config")
+    "f r" '(consult-recent-file :wk "Recent files")
+    "f f" '(consult-fd :wk "Fd search for files")
+    "f g" '(consult-ripgrep :wk "Ripgrep search in files")
+    "f l" '(consult-line :wk "Find line")
+    "f i" '(consult-imenu :wk "Imenu buffer locations"))
+
+  (start/leader-keys
+    "b" '(:ignore t :wk "Buffer Bookmarks")
+    "b b" '(consult-buffer :wk "Switch buffer")
+    "b k" '(kill-this-buffer :wk "Kill this buffer")
+    "b i" '(ibuffer :wk "Ibuffer")
+    "b n" '(next-buffer :wk "Next buffer")
+    "b p" '(previous-buffer :wk "Previous buffer")
+    "b r" '(revert-buffer :wk "Reload buffer")
+    "b j" '(consult-bookmark :wk "Bookmark jump"))
+
+  (start/leader-keys
+    "d" '(:ignore t :wk "Dired")
+    "d v" '(dired :wk "Open dired")
+    "d j" '(dired-jump :wk "Dired jump to current"))
+
+  (start/leader-keys
+    "e" '(:ignore t :wk "Eglot Evaluate")
+    "e e" '(eglot-reconnect :wk "Eglot Reconnect")
+    "e f" '(eglot-format :wk "Eglot Format")
+    "e l" '(consult-flymake :wk "Consult Flymake")
+    "e b" '(eval-buffer :wk "Evaluate elisp in buffer")
+    "e r" '(eval-region :wk "Evaluate elisp in region"))
+
+  (start/leader-keys
+    "g" '(:ignore t :wk "Git")
+    "g g" '(magit-status :wk "Magit status"))
+
+  (start/leader-keys
+    "h" '(:ignore t :wk "Help") ;; To get more help use C-h commands (describe variable, function, etc.)
+    "h q" '(save-buffers-kill-emacs :wk "Quit Emacs and Daemon")
+    "h r" '((lambda () (interactive)
+              (load-file "~/.config/emacs/init.el"))
+            :wk "Reload Emacs config"))
+
+  (start/leader-keys
+    "s" '(:ignore t :wk "Show")
+    "s e" '(eat :wk "Eat terminal"))
+
+  (start/leader-keys
+    "t" '(:ignore t :wk "Toggle")
+    "t t" '(visual-line-mode :wk "Toggle truncated lines (wrap)")
+    "t l" '(display-line-numbers-mode :wk "Toggle line numbers")))
+
+(use-package evil 
+  :ensure t
+  :init
+  (setq evil-respect-visual-line-mode t) ;; respect visual lines
+
+  (setq evil-search-module 'isearch) ;; use emacs' built-in search functionality.
+
+  (setq evil-want-C-u-scroll t) ;; allow scroll up with 'C-u'
+  (setq evil-want-C-d-scroll t) ;; allow scroll down with 'C-d'
+
+  (setq evil-want-integration t) ;; necessary for evil collection
+  (setq evil-want-keybinding nil)
+
+  (setq evil-split-window-below t) ;; split windows created below
+  (setq evil-vsplit-window-right t) ;; vertically split windows created to the right
+
+  (setq evil-want-C-i-jump nil) ;; hopefully this will fix weird tab behaviour
+
+  (setq evil-undo-system 'undo-redo) ;; undo via 'u', and redo the undone change via 'C-r'; only available in emacs 28+.
+  :config
+  (evil-mode 1))
+
+(global-unset-key (kbd "C-j"))
+(global-set-key (kbd "C-h") #'evil-window-left)
+(global-set-key (kbd "C-j") #'evil-window-down)
+(global-set-key (kbd "C-k") #'evil-window-up)
+(global-set-key (kbd "C-l") #'evil-window-right)
+
+(use-package evil-collection ;; evilifies a bunch of things
+  :ensure t
+  :after evil
+  :init
+  (setq evil-collection-outline-bind-tab-p t) ;; '<TAB>' cycles visibility in 'outline-minor-mode'
+  ;; If I want to incrementally enable evil-collection mode-by-mode, I can do something like the following:
+  ;; (setq evil-collection-mode-list nil) ;; I don't like surprises
+  ;; (add-to-list 'evil-collection-mode-list 'magit) ;; evilify magit
+  ;; (add-to-list 'evil-collection-mode-list '(pdf pdf-view)) ;; evilify pdf-view
+  :config
+  (evil-collection-init))
+
+(use-package evil-commentary
+  :ensure t
+  :after evil
+  :config
+  (evil-commentary-mode)) ;; globally enable evil-commentary
+
+(use-package evil-surround
+  :ensure t
+  :after evil
+  :config
+  (global-evil-surround-mode 1)) ;; globally enable evil-surround
+
+(use-package evil-goggles
+  :ensure t
+  :after evil
+  :config
+  (evil-goggles-mode)
+
+  ;; optionally use diff-mode's faces; as a result, deleted text
+  ;; will be highlighed with `diff-removed` face which is typically
+  ;; some red color (as defined by the color theme)
+  ;; other faces such as `diff-added` will be used for other actions
+  (evil-goggles-use-diff-faces))
+
+(use-package avy
+  :ensure t
+  :init
+  (defun dysthesis/avy-action-insert-newline (pt)
+    (save-excursion
+      (goto-char pt)
+      (newline))
+    (select-window
+     (cdr
+      (ring-ref avy-ring 0))))
+  (defun dysthesis/avy-action-kill-whole-line (pt)
+    (save-excursion
+      (goto-char pt)
+      (kill-whole-line))
+    (select-window
+     (cdr
+      (ring-ref avy-ring 0))))
+  (defun dysthesis/avy-action-embark (pt)
+    (unwind-protect
+        (save-excursion
+          (goto-char pt)
+          (embark-act))
+      (select-window
+       (cdr (ring-ref avy-ring 0))))
+    t) ;; adds an avy action for embark
+  :general
+  (general-def '(normal motion)
+    "s" 'evil-avy-goto-char-timer
+    "f" 'evil-avy-goto-char-in-line
+    "gl" 'evil-avy-goto-line ;; this rules
+    ";" 'avy-resume)
+  :config
+  (setf (alist-get ?. avy-dispatch-alist) 'dysthesis/avy-action-embark ;; embark integration
+        (alist-get ?i avy-dispatch-alist) 'dysthesis/avy-action-insert-newline
+        (alist-get ?K avy-dispatch-alist) 'dysthesis/avy-action-kill-whole-line)) ;; kill lines with avy
 
 (use-package emacs
   :demand t
@@ -127,23 +263,11 @@
                 eshell-mode-hook))
   (add-hook mode (lambda () (display-line-numbers-mode 0))))
 
-(use-package catppuccin-theme
-             :ensure t
-             :config
-             (load-theme 'catppuccin
-                         :no-confirm
-                         t)
-             (catppuccin-set-color 'base "#000000")
-             (catppuccin-set-color 'crust "#000000")
-             (catppuccin-set-color 'mantle "#11111b")
-             (catppuccin-set-color 'surface0 "#181825")
-             (catppuccin-set-color 'surface1 "#313244")
-             (catppuccin-set-color 'surface2 "#45475a")
-             (catppuccin-set-color 'overlay0 "#585b70")
-             (catppuccin-set-color 'overlay1 "#6c7086")
-             (catppuccin-set-color 'overlay2 "#7f849c")
-             (catppuccin-set-color 'text "#ffffff")
-             (catppuccin-reload))
+(use-package poet-theme
+  :ensure t
+  :demand t
+  :config
+  (load-theme 'poet-dark-monochrome t))
 
 (use-package solaire-mode
   :ensure t
@@ -158,9 +282,6 @@
   (doom-modeline-bar-width 4)
   (doom-modeline-persp-name t)
   (doom-modeline-persp-icon t))
-
-(set-frame-parameter nil 'alpha-background 80)
-(add-to-list 'default-frame-alist '(alpha-background . 80))
 
 (use-package rainbow-delimiters
   :ensure t
@@ -284,199 +405,6 @@
   :hook ((prog-mode yaml-mode) . indent-bars-mode)
   :config (require 'indent-bars-ts))
 
-(use-package evil 
-  :ensure t
-  :init
-  (setq evil-respect-visual-line-mode t) ;; respect visual lines
-
-  (setq evil-search-module 'isearch) ;; use emacs' built-in search functionality.
-
-  (setq evil-want-C-u-scroll t) ;; allow scroll up with 'C-u'
-  (setq evil-want-C-d-scroll t) ;; allow scroll down with 'C-d'
-
-  (setq evil-want-integration t) ;; necessary for evil collection
-  (setq evil-want-keybinding nil)
-
-  (setq evil-split-window-below t) ;; split windows created below
-  (setq evil-vsplit-window-right t) ;; vertically split windows created to the right
-
-  (setq evil-want-C-i-jump nil) ;; hopefully this will fix weird tab behaviour
-
-  (setq evil-undo-system 'undo-redo) ;; undo via 'u', and redo the undone change via 'C-r'; only available in emacs 28+.
-  :config
-  (evil-mode 1))
-
-(global-unset-key (kbd "C-j"))
-(global-set-key (kbd "C-h") #'evil-window-left)
-(global-set-key (kbd "C-j") #'evil-window-down)
-(global-set-key (kbd "C-k") #'evil-window-up)
-(global-set-key (kbd "C-l") #'evil-window-right)
-
-(use-package evil-collection ;; evilifies a bunch of things
-  :ensure t
-  :after evil
-  :init
-  (setq evil-collection-outline-bind-tab-p t) ;; '<TAB>' cycles visibility in 'outline-minor-mode'
-  ;; If I want to incrementally enable evil-collection mode-by-mode, I can do something like the following:
-  ;; (setq evil-collection-mode-list nil) ;; I don't like surprises
-  ;; (add-to-list 'evil-collection-mode-list 'magit) ;; evilify magit
-  ;; (add-to-list 'evil-collection-mode-list '(pdf pdf-view)) ;; evilify pdf-view
-  :config
-  (evil-collection-init))
-
-(use-package evil-commentary
-  :ensure t
-  :after evil
-  :config
-  (evil-commentary-mode)) ;; globally enable evil-commentary
-
-(use-package evil-surround
-  :ensure t
-  :after evil
-  :config
-  (global-evil-surround-mode 1)) ;; globally enable evil-surround
-
-(use-package evil-goggles
-  :ensure t
-  :after evil
-  :config
-  (evil-goggles-mode)
-
-  ;; optionally use diff-mode's faces; as a result, deleted text
-  ;; will be highlighed with `diff-removed` face which is typically
-  ;; some red color (as defined by the color theme)
-  ;; other faces such as `diff-added` will be used for other actions
-  (evil-goggles-use-diff-faces))
-
-(use-package general
-  :ensure (:wait t)
-  :after (evil)
-  :demand t
-  :config
-  (general-evil-setup)
-  ;; Set up 'SPC' as the leader key
-  (general-create-definer start/leader-keys
-    :states '(normal insert visual motion emacs)
-    :keymaps 'override
-    :prefix "SPC"           ;; Set leader key
-    :global-prefix "C-SPC") ;; Set global leader key
-
-  (start/leader-keys
-    "." '(find-file :wk "Find file")
-    "TAB" '(comment-line :wk "Comment lines")
-    "p" '(:keymap projectile-command-map
-                  :package projectile
-                  :wk "Projectile command map"))
-
-  (start/leader-keys
-    "f" '(:ignore t :wk "Find")
-    "f c" '((lambda () (interactive) (find-file "~/.config/emacs/README.org")) :wk "Edit emacs config")
-    "f r" '(consult-recent-file :wk "Recent files")
-    "f f" '(consult-fd :wk "Fd search for files")
-    "f g" '(consult-ripgrep :wk "Ripgrep search in files")
-    "f l" '(consult-line :wk "Find line")
-    "f i" '(consult-imenu :wk "Imenu buffer locations"))
-
-  (start/leader-keys
-    "b" '(:ignore t :wk "Buffer Bookmarks")
-    "b b" '(consult-buffer :wk "Switch buffer")
-    "b k" '(kill-this-buffer :wk "Kill this buffer")
-    "b i" '(ibuffer :wk "Ibuffer")
-    "b n" '(next-buffer :wk "Next buffer")
-    "b p" '(previous-buffer :wk "Previous buffer")
-    "b r" '(revert-buffer :wk "Reload buffer")
-    "b j" '(consult-bookmark :wk "Bookmark jump"))
-
-  (start/leader-keys
-    "d" '(:ignore t :wk "Dired")
-    "d v" '(dired :wk "Open dired")
-    "d j" '(dired-jump :wk "Dired jump to current"))
-
-  (start/leader-keys
-    "e" '(:ignore t :wk "Eglot Evaluate")
-    "e e" '(eglot-reconnect :wk "Eglot Reconnect")
-    "e f" '(eglot-format :wk "Eglot Format")
-    "e l" '(consult-flymake :wk "Consult Flymake")
-    "e b" '(eval-buffer :wk "Evaluate elisp in buffer")
-    "e r" '(eval-region :wk "Evaluate elisp in region"))
-
-  (start/leader-keys
-    "g" '(:ignore t :wk "Git")
-    "g g" '(magit-status :wk "Magit status"))
-
-  (start/leader-keys
-    "h" '(:ignore t :wk "Help") ;; To get more help use C-h commands (describe variable, function, etc.)
-    "h q" '(save-buffers-kill-emacs :wk "Quit Emacs and Daemon")
-    "h r" '((lambda () (interactive)
-              (load-file "~/.config/emacs/init.el"))
-            :wk "Reload Emacs config"))
-
-  (start/leader-keys
-    "s" '(:ignore t :wk "Show")
-    "s e" '(eat :wk "Eat terminal"))
-
-  (start/leader-keys
-    "t" '(:ignore t :wk "Toggle")
-    "t t" '(visual-line-mode :wk "Toggle truncated lines (wrap)")
-    "t l" '(display-line-numbers-mode :wk "Toggle line numbers")))
-
-(use-package avy
-  :ensure t
-  :init
-  (defun dysthesis/avy-action-insert-newline (pt)
-    (save-excursion
-      (goto-char pt)
-      (newline))
-    (select-window
-     (cdr
-      (ring-ref avy-ring 0))))
-  (defun dysthesis/avy-action-kill-whole-line (pt)
-    (save-excursion
-      (goto-char pt)
-      (kill-whole-line))
-    (select-window
-     (cdr
-      (ring-ref avy-ring 0))))
-  (defun dysthesis/avy-action-embark (pt)
-    (unwind-protect
-        (save-excursion
-          (goto-char pt)
-          (embark-act))
-      (select-window
-       (cdr (ring-ref avy-ring 0))))
-    t) ;; adds an avy action for embark
-  :general
-  (general-def '(normal motion)
-    "s" 'evil-avy-goto-char-timer
-    "f" 'evil-avy-goto-char-in-line
-    "gl" 'evil-avy-goto-line ;; this rules
-    ";" 'avy-resume)
-  :config
-  (setf (alist-get ?. avy-dispatch-alist) 'dysthesis/avy-action-embark ;; embark integration
-        (alist-get ?i avy-dispatch-alist) 'dysthesis/avy-action-insert-newline
-        (alist-get ?K avy-dispatch-alist) 'dysthesis/avy-action-kill-whole-line)) ;; kill lines with avy
-
-(use-package embark
-  :ensure (:host github
-		 :repo "oantolin/embark")
-  :after minibuffer
-  :hook ((embark-collect-mode . hl-line-mode)))
-(use-package embark-consult
-  :ensure (:host github :repo "oantolin/embark"
-             :files ("embark-consult.el"))
-  :after (embark consult)
-  :demand
-  :bind (:map embark-become-file+buffer-map
-         ("m" . consult-bookmark)
-         ("b" . consult-buffer)
-         ("j" . consult-find)
-         :map embark-consult-search-map
-         ("f". consult-fd))
-  :config
-  (add-to-list
-   'embark-exporters-alist
-   '(consult-flymake-error . embark-export-flymake)))
-
 (use-package vertico
   :ensure t
   :init
@@ -503,22 +431,22 @@
   :hook
   ('marginalia-mode-hook . 'nerd-icons-completion-marginalia-setup))
 
-;; (use-package orderless
-;;   :ensure t
-;;   :custom
-;;   (completion-styles '(orderless basic))
-;;   (orderless-matching-styles
-;;    '(orderless-literal
-;;      orderless-prefixes
-;;      orderless-initialism
-;;      orderless-regexp
-;;      ;; orderless-flex                       ; Basically fuzzy finding
-;;      ;; orderless-strict-leading-initialism
-;;      ;; orderless-strict-initialism
-;;      ;; orderless-strict-full-initialism
-;;      ;; orderless-without-literal          ; Recommended for dispatches instead
-;;      ))
-;;   (completion-category-overrides '((file (styles basic partial-completion)))))
+(use-package orderless
+  :ensure t
+  :custom
+  (completion-styles '(orderless basic))
+  (orderless-matching-styles
+   '(orderless-literal
+     orderless-prefixes
+     orderless-initialism
+     orderless-regexp
+     orderless-flex                       ; Basically fuzzy finding
+     ;; orderless-strict-leading-initialism
+     ;; orderless-strict-initialism
+     ;; orderless-strict-full-initialism
+     ;; orderless-without-literal          ; Recommended for dispatches instead
+     ))
+  (completion-category-overrides '((file (styles basic partial-completion)))))
 
 (use-package corfu
   ;; Optional customizations
@@ -686,19 +614,6 @@
   ;; load default config
   (require 'smartparens-config))
 
-(use-package prescient
-  :ensure t
-  :custom (prescient-filter-method '(literal regexp initialism fuzzy))
-  :config (prescient-persist-mode 1))
-(use-package corfu-prescient
-  :ensure t
-  :init
-  (corfu-prescient-mode 1))
-(use-package vertico-prescient
-  :ensure t
-  :init
-  (vertico-prescient-mode 1))
-
 (use-package eldoc-box
   :ensure t
   :after (eldoc eglot)
@@ -760,14 +675,6 @@
             (lambda ()
               (add-hook 'before-save-hook 'eglot-format nil t))))
 
-(use-package eglot-booster
-  :ensure (:type git
-                 :host github
-                 :repo "jdtsmith/eglot-booster")
-  :after eglot
-  :config
-  (eglot-booster-mode))
-
 (use-package consult-eglot
   :ensure t
   :after (eglot consult)
@@ -825,16 +732,6 @@
   ;; You can also bind multiple items and we will match the first one we can find
   (define-key evil-outer-text-objects-map "a" (evil-textobj-tree-sitter-get-textobj ("conditional.outer" "loop.outer")))
   )
-
-(use-package ts-fold
-  :ensure
-  (:type git :host github :repo "emacs-tree-sitter/ts-fold")
-  :general
-  ("C-c f O" 'ts-fold-open-all)
-  ("C-c f o" 'ts-fold-open-recursively)
-  ("C-c f C" 'ts-fold-close-all)
-  ("C-c f c" 'ts-fold-close)
-  ("C-c f z" 'ts-fold-toggle))
 
 (use-package projectile
   :ensure t
@@ -929,15 +826,6 @@
   :ensure t
   :mode "\\.nix\\'"
   :hook (nix-mode . eglot-ensure))
-(use-package nix-drv-mode
-  :after nix-mode
-  :mode "\\.drv\\'")
-(use-package nix-shell
-  :after nix-mode
-  :commands (nix-shell-unpack nix-shell-configure nix-shell-build))
-(use-package nix-repl
-  :after nix-mode
-  :commands (nix-repl))
 
 (use-package haskell-mode :ensure t)
 
@@ -1004,13 +892,7 @@
   (org-cite-follow-processor 'citar)
   (org-cite-activate-processor 'citar)
   :config
-  (custom-set-faces
-   '(org-level-1 ((t (:inherit outline-1 :foreground "#ffffff" :height 1.4 :weight bold))))
-   '(org-level-2 ((t (:inherit outline-2 :foreground "#ffffff" :height 1.2 :weight bold))))
-   '(org-level-3 ((t (:inherit outline-3 :foreground "#ffffff" :height 1.1 :weight bold))))
-   '(org-level-4 ((t (:inherit outline-4 :foreground "#ffffff" :height 1.0 :weight bold))))
-   '(org-level-5 ((t (:inherit outline-5 :foreground "#ffffff" :height 0.9 :weight bold))))
-   (set-face-attribute 'org-document-title nil :foreground "#ffffff" :height 2.0))
+  
   (plist-put org-format-latex-options :foreground "White")
   (plist-put org-format-latex-options :background nil)
   (plist-put org-format-latex-options :scale 0.65))
@@ -1416,15 +1298,13 @@ If on a:
 
 (setq org-hide-emphasis-markers t)
 (use-package org-appear
-  :ensure (:type git :host github :repo
-		 "awth13/org-appear")
+  :ensure t
   :config ; add late to hook
   (add-hook 'org-mode-hook 'org-appear-mode))
 
 (use-package org-modern
   :ensure t
   :config
-  (package-initialize)
   (menu-bar-mode -1)
   (tool-bar-mode -1)
   (scroll-bar-mode -1)
@@ -1638,8 +1518,7 @@ If on a:
   :config (org-roam-timestamps-mode))
 
 (use-package org-roam-ui
-  :ensure
-  (:host github :repo "org-roam/org-roam-ui" :branch "main" :files ("*.el" "out"))
+  :ensure t
   :after org-roam
   ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
   ;;         a hookable mode anymore, you're advised to pick something yourself
@@ -1709,31 +1588,6 @@ If on a:
    org-noter-hide-other nil
    ;; Everything is relative to the main notes file
    org-noter-notes-search-path (list org-directory)))
-
-(use-package org-remark
-  :ensure t
-  :bind (;; :bind keyword also implicitly defers org-remark itself.
-         ;; Keybindings before :map is set for global-map.
-         ("C-c m m" . org-remark-mark)
-         ("C-c m l" . org-remark-mark-line)
-         :map org-remark-mode-map
-         ("C-c m o" . org-remark-open)
-         ("C-c m ]" . org-remark-view-next)
-         ("C-c m [" . org-remark-view-prev)
-         ("C-c m r" . org-remark-remove)
-         ("C-c m d" . org-remark-delete))
-  ;; Alternative way to enable `org-remark-global-tracking-mode' in
-  ;; `after-init-hook'.
-  ;; :hook (after-init . org-remark-global-tracking-mode)
-  :init
-  ;; It is recommended that `org-remark-global-tracking-mode' be
-  ;; enabled when Emacs initializes. Alternatively, you can put it to
-  ;; `after-init-hook' as in the comment above
-  (org-remark-global-tracking-mode +1)
-  :config
-  (use-package org-remark-info :after info :config (org-remark-info-mode +1))
-  (use-package org-remark-eww  :after eww  :config (org-remark-eww-mode +1))
-  (use-package org-remark-nov  :after nov  :config (org-remark-nov-mode +1)))
 
 (use-package org-auto-tangle
   :ensure t

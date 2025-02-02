@@ -1,4 +1,3 @@
-(setq package-enable-at-startup nil)
 (setq inhibit-default-init nil)
 (setq native-comp-async-report-warnings-errors nil)  ;; only in Emacs 29.0+
 
